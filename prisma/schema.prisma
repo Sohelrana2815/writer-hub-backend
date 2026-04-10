@@ -1,0 +1,248 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- ENUMS ---
+
+enum Role {
+  ADMIN
+  AUTHOR
+  READER
+}
+
+enum AuthProvider {
+  CREDENTIALS
+  GOOGLE
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  BANNED
+  DELETED
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  ARCHIVED
+  REJECTED
+}
+
+enum CommentStatus {
+  ACTIVE
+  HIDDEN
+  DELETED
+}
+
+// USER MODEL
+model User {
+  id         String     @id @default(cuid())
+  name       String
+  email      String     @unique
+  password   String? // Optional
+  image      String?
+  role       Role       @default(READER)
+  status     UserStatus @default(ACTIVE)
+  isVerified Boolean    @default(false)
+
+  // Soft delete
+
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  // Relations
+
+  authAccounts AuthProviderAccount[]
+  otps         OtpVerification[]
+  devices      LoginDevice[]
+  posts        Post[]
+
+  comments     Comment[]
+  session      ReadingSession[]
+  refreshToken RefreshToken[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([status])
+  @@index([role])
+}
+
+// AUTH PROVIDER ACCOUNT MODEL
+model AuthProviderAccount {
+  id           String       @id @default(cuid())
+  userId       String
+  provider     AuthProvider
+  providerId   String
+  accessToken  String?      @db.Text
+  refreshToken String?      @db.Text
+  expiresAt    DateTime?
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+// OTP VERIFICATION MODEL
+model OtpVerification {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  otp       String
+  expiresAT DateTime // 5 mins valid
+  isUsed    Boolean  @default(false)
+  attempts  Int      @default(0) // Max 5 resend
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([expiresAT])
+}
+
+// LOGIN DEVICE MODEL
+model LoginDevice {
+  id            String         @id @default(cuid())
+  userId        String
+  deviceId      String
+  ipAddress     String
+  userAgent     String         @db.Text
+  isTrusted     Boolean        @default(false)
+  lastLoginAt   DateTime       @default(now())
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@index([deviceId])
+}
+
+// REFRESH TOKEN MODEL
+model RefreshToken {
+  id        String       @id @default(cuid())
+  userId    String
+  deviceId  String?
+  token     String       @unique @db.Text
+  expiresAt DateTime
+  isRevoked Boolean      @default(false)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device    LoginDevice? @relation(fields: [deviceId], references: [id])
+  createdAt DateTime     @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@index([deviceId])
+}
+
+// BLOG & CONTENT MODELS
+
+model Post {
+  id            String     @default(cuid())
+  title         String
+  slug          String     @unique
+  excerpt       String     @db.VarChar(300)
+  content       String     @db.Text
+  featuredImage String?
+  status        PostStatus @default(PENDING)
+
+  // SEO Metadata
+  metaTitle       String?  @db.VarChar(60)
+  metaDescription String?  @db.VarChar(160)
+  keywords        String[]
+
+  // AI-Generated Content (Optional)
+  aiGeneratedExcerpt     String?  @db.VarChar(300)
+  aiGeneratedMetaTags    String   @db.Text // JSON STRING
+  aiSuggestedCategoryIds String[]
+
+  // Reading Info
+  readingTime     Int              @default(5)
+  difficulty      String           @default("Intermediate")
+  viewCount       Int              @default(0)
+  // Relations
+  authorId        String
+  author          User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category         @relation(fields: [categoryId], references: [id])
+  tags            Tag[]
+  comments        Comment[]
+  readingSessions ReadingSession[]
+
+  // Admin Moderation
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  rejectionReason String?   @db.Text
+  // Soft Delete
+  isDeleted       Boolean   @default(false)
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([slug])
+  @@index([createdAt])
+  @@index([viewCount])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?  @db.VarBit(500)
+  icon        String?
+  color       String?
+  posts       Post[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  posts     Post[]
+  createdAt DateTime @default(now())
+
+  @@index([slug])
+}
+
+model Comment {
+  id       String        @id @default(cuid())
+  content  String        @db.Text
+  status   CommentStatus @default(ACTIVE)
+  postId   String
+  post     Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Nested Replies
+  parentId  String?
+  parent    Comment?  @relation("Replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("Replies")
+  // Soft Delete
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([status])
+}
