@@ -1,0 +1,391 @@
+// ============================================
+// PRISMA SCHEMA - FINAL CLEAN VERSION
+// ============================================
+// ✅ Clear token storage strategy
+// ✅ JWT tokens properly handled
+// ✅ OAuth tokens only when needed
+// ============================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// TOKEN STORAGE STRATEGY
+// ============================================
+// 
+// JWT Access Token:  HTTP-only Cookie only (NOT in database)
+// JWT Refresh Token: HTTP-only Cookie + Database (for revocation)
+// OAuth Tokens:      Database only (for Google API calls)
+//
+// ============================================
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  ADMIN
+  AUTHOR
+  READER
+}
+
+enum AuthProvider {
+  CREDENTIALS // Email + Password (JWT)
+  GOOGLE      // Google OAuth
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  BANNED
+  DELETED
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING
+  PUBLISHED
+  REJECTED
+  ARCHIVED
+}
+
+enum CommentStatus {
+  ACTIVE
+  HIDDEN
+  DELETED
+}
+
+// ============================================
+// USER & AUTHENTICATION MODELS
+// ============================================
+
+model User {
+  id            String       @id @default(cuid())
+  name          String
+  email         String       @unique
+  password      String?      // NULL for OAuth users
+  image         String?
+  role          Role         @default(READER)
+  status        UserStatus   @default(ACTIVE)
+  isVerified    Boolean      @default(false)
+
+  // Soft Delete
+  isDeleted     Boolean      @default(false)
+  deletedAt     DateTime?
+
+  // Relations
+  authAccounts  AuthProviderAccount[]
+  otps          OtpVerification[]
+  devices       LoginDevice[]
+  posts         Post[]
+  comments      Comment[]
+  sessions      ReadingSession[]
+  refreshTokens RefreshToken[]
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status])
+  @@index([role])
+}
+
+// ============================================
+// OAuth Provider Account (Google Login)
+// ============================================
+// 📌 PURPOSE: Store Google OAuth tokens for future API calls
+// 📌 NOT for JWT tokens (those go in RefreshToken model)
+// ============================================
+
+model AuthProviderAccount {
+  id           String       @id @default(cuid())
+  userId       String
+  provider     AuthProvider
+  providerId   String?      // Google User ID
+  
+  // 🔐 OAuth Tokens (ONLY for Google/OAuth providers)
+  // These are Google's tokens, NOT your JWT tokens
+  // Used for: Google Calendar, Gmail, Drive API calls
+  accessToken  String?      @db.Text  // Google OAuth access token
+  refreshToken String?      @db.Text  // Google OAuth refresh token
+  expiresAt    DateTime?                // Google token expiry
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+// ❓ FAQ: Do I need this if I only use email/password?
+// ✅ YES - Keep it for future flexibility
+//    - Provider stays as "CREDENTIALS"
+//    - accessToken/refreshToken/expiresAt stay NULL
+//    - If you add Google later, no schema change needed
+
+// ❓ Can I remove accessToken/refreshToken fields?
+// ✅ YES - if you're 100% sure you'll NEVER:
+//    - Let users connect Google Calendar
+//    - Auto-post blogs to social media
+//    - Import data from Google Drive
+//    - Use any Google API on behalf of user
+
+// ============================================
+// OTP Verification
+// ============================================
+
+model OtpVerification {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  otp       String
+  expiresAt DateTime // 5 minutes
+  isUsed    Boolean  @default(false)
+  attempts  Int      @default(0) // Max 5 resends
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+// ============================================
+// Device Tracking (Smart Login)
+// ============================================
+
+model LoginDevice {
+  id           String   @id @default(cuid())
+  userId       String
+  deviceId     String   // Browser fingerprint
+  ipAddress    String
+  userAgent    String   @db.Text
+  isTrusted    Boolean  @default(false) // Same device = no OTP
+  lastLoginAt  DateTime @default(now())
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@index([deviceId])
+}
+
+// ============================================
+// JWT Refresh Token Management
+// ============================================
+// 📌 PURPOSE: Store YOUR JWT refresh tokens for revocation
+// 📌 NOT for OAuth tokens (those go in AuthProviderAccount)
+// ============================================
+
+model RefreshToken {
+  id          String   @id @default(cuid())
+  userId      String
+  deviceId    String?  // Which device created this token
+  token       String   @unique @db.Text // JWT refresh token (hashed)
+  expiresAt   DateTime
+  isRevoked   Boolean  @default(false)  // Logout = set to true
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device      LoginDevice? @relation(fields: [deviceId], references: [id])
+
+  createdAt   DateTime     @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@index([deviceId])
+}
+
+// 💡 Why store JWT refresh tokens in database?
+// ✅ Token revocation (logout, "logout all devices")
+// ✅ Security: Detect stolen tokens
+// ✅ User management: Admin can revoke user sessions
+// ✅ Device tracking: Link tokens to devices
+
+// 💡 Why NOT store JWT access tokens?
+// ❌ They're short-lived (15 min)
+// ❌ Stateless by design
+// ❌ Stored in HTTP-only cookie is enough
+// ❌ No need to check database on every request
+
+// ============================================
+// BLOG & CONTENT MODELS
+// ============================================
+
+model Post {
+  id            String     @id @default(cuid())
+  title         String
+  slug          String     @unique
+  excerpt       String     @db.VarChar(300)
+  content       String     @db.Text
+  featuredImage String?
+  status        PostStatus @default(PENDING)
+
+  // SEO Metadata
+  metaTitle       String?    @db.VarChar(60)
+  metaDescription String?    @db.VarChar(160)
+  keywords        String[]
+
+  // AI-Generated Content (Optional)
+  aiGeneratedExcerpt     String? @db.VarChar(300)
+  aiGeneratedMetaTags    String? @db.Text  // JSON string
+  aiSuggestedCategoryIds String[]          // ["cat1", "cat2"]
+
+  // Reading Info
+  readingTime     Int        @default(5)
+  difficulty      String     @default("Intermediate")
+  viewCount       Int        @default(0)
+
+  // Relations
+  authorId        String
+  author          User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category   @relation(fields: [categoryId], references: [id])
+  tags            Tag[]
+  comments        Comment[]
+  readingSessions ReadingSession[]
+
+  // Admin Moderation
+  approvedAt      DateTime?
+  approvedBy      String?  // Admin user ID
+  rejectedAt      DateTime?
+  rejectedBy      String?  // Admin user ID
+  rejectionReason String?  @db.Text
+
+  // Soft Delete
+  isDeleted       Boolean    @default(false)
+  deletedAt       DateTime?
+
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([slug])
+  @@index([createdAt])
+  @@index([viewCount])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?  @db.VarChar(500)
+  icon        String?  // Emoji or icon URL
+  color       String?  // Hex color
+  
+  posts       Post[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String @unique
+  slug  String @unique
+  posts Post[]
+
+  createdAt DateTime @default(now())
+
+  @@index([slug])
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  content   String        @db.Text
+  status    CommentStatus @default(ACTIVE)
+
+  postId    String
+  post      Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Nested Replies
+  parentId  String?
+  parent    Comment?      @relation("Replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[]     @relation("Replies")
+
+  // Soft Delete
+  isDeleted Boolean       @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([status])
+}
+
+// ============================================
+// ANALYTICS
+// ============================================
+
+model ReadingSession {
+  id           String    @id @default(cuid())
+  userId       String
+  postId       String
+  duration     Int       @default(0) // Seconds
+  progress     Int       @default(0) // 0-100%
+  startedAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now()) // Last Read at 
+  completedAt  DateTime?
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post         Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
+}
+
+// ============================================
+// SUMMARY & BEST PRACTICES
+// ============================================
+
+// ✅ Token Storage Strategy:
+// - JWT Access Token:  Cookie only (NOT database)
+// - JWT Refresh Token: Cookie + Database (revocation)
+// - OAuth Tokens:      Database only (API calls)
+
+// ✅ Security:
+// - Passwords: bcrypt with 12+ rounds
+// - Tokens: HTTP-only, Secure, SameSite cookies
+// - OTP: 5-minute expiry, max 5 attempts
+
+// ✅ Performance:
+// - Strategic indexes on frequently queried fields
+// - Soft delete (no data loss)
+// - Full-text search ready
+
+// ✅ Scalability:
+// - Device tracking for smart login
+// - Reading analytics per user per post
+// - Nested comments support
+// - Multi-auth provider ready
+
+// ============================================
+// MIGRATION COMMANDS
+// ============================================
+// npx prisma migrate dev --name init
+// npx prisma generate
+// npx prisma studio  # View database in browser
