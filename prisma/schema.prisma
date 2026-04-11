@@ -9,13 +9,13 @@ datasource db {
 // --- ENUMS ---
 
 enum Role {
-  ADMIN
-  AUTHOR
-  READER
+  ADMIN // CAN READ MANAGE ALL BLOGS AND USERS
+  AUTHOR // CAN READ, POST AND MANGE OWN BLOGS AND PROFILE
+  READER // ONLY READ AND CAN COMMENT
 }
 
 enum AuthProvider {
-  CREDENTIALS
+  CREDENTIALS 
   GOOGLE
 }
 
@@ -67,4 +67,200 @@ model User {
 
   @@index([status])
   @@index([role])
+}
+
+model AuthProviderAccount {
+  id           String       @id @default(cuid())
+  userId       String
+  provider     AuthProvider
+  providerId   String?
+  accessToken  String?      @db.Text
+  refreshToken String?      @db.Text
+  expiresAt    DateTime?
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([provider, providerId])
+  @@index([userId])
+}
+
+model OtpVerification {
+  id        String   @id @default(cuid())
+  userId    String
+  email     String
+  otp       String
+  expiresAt DateTime
+  isUsed    Boolean  @default(false)
+  attempts  Int      @default(0)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model LoginDevice {
+  id            String
+  userId        String
+  deviceId      String
+  ipAddress     String
+  userAgent     String
+  isTrusted     Boolean        @default(false)
+  lastLoginAt   DateTime       @default(now())
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@index([deviceId])
+}
+
+// Refresh Token Model
+
+model RefreshToken {
+  id        String       @id @default(cuid())
+  userId    String
+  deviceId  String?
+  token     String       @unique @db.Text // 
+  expiresAt DateTime
+  isRevoked Boolean      @default(false)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device    LoginDevice? @relation(fields: [deviceId], references: [id])
+  createdAt DateTime     @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@index([deviceId])
+}
+
+// BLOG MODEL
+
+model Post {
+  id            String     @id @default(cuid())
+  title         String
+  slug          String     @unique
+  excerpt       String     @db.VarChar(300)
+  content       String     @db.Text
+  featuredImage String?
+  status        PostStatus @default(PENDING)
+
+  // SEO Metadata
+  metaTitle       String?  @db.VarChar(60)
+  metaDescription String?  @db.VarChar(160)
+  keywords        String[]
+
+  aiGeneratedExcerpt     String?  @db.VarChar(300)
+  aiGeneratedMetaTags    String?  @db.Text
+  aiSuggestedCategoryIds String[]
+
+  // Reading Info
+  readingTime Int    @default(5)
+  difficulty  String @default("Intermediate")
+  viewCount   Int    @default(0)
+
+  // Relations
+  authorId        String
+  author          User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  categoryId      String
+  category        Category         @relation(fields: [categoryId], references: [id])
+  tags            Tag[]
+  comments        Comment[]
+  readingSessions ReadingSession[]
+  // Admin Moderation
+
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectedAt      DateTime?
+  rejectedBy      String?
+  rejectionReason String?   @db.Text
+  // Soft Delete
+  isDeleted       Boolean   @default(false)
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([status])
+  @@index([slug])
+  @@index([createdAt])
+  @@index([viewCount])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
+}
+
+model Category {
+  id          String
+  name        String
+  slug        String
+  description String?
+  icon        String?
+  color       String?
+  posts       Post[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+}
+
+model Tag {
+  id        String
+  name      String
+  slug      String
+  posts     Post[]
+  createdAt DateTime @default(now())
+
+  @@index([slug])
+}
+
+model Comment {
+  id      String        @id @default(cuid())
+  content String        @db.Text
+  status  CommentStatus @default(ACTIVE)
+
+  postId   String
+  post     Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Nested Replies
+  parentId String?
+  parent   Comment?  @relation("Replies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("Replies")
+
+  // Soft Delete
+  isDeleted Boolean   @default(false)
+  deletedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([status])
+}
+
+// ANALYTICS
+
+model ReadingSession {
+  id           String    @id @default(cuid())
+  userId       String
+  postId       String
+  duration     Int       @default(0) // Seconds
+  progress     Int       @default(0) // 0-100%
+  startedAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now()) // Last Read at 
+  completedAt  DateTime?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, postId])
+  @@index([userId])
+  @@index([postId])
 }
