@@ -15,15 +15,15 @@ enum Role {
 }
 
 enum AuthProvider {
-  CREDENTIALS 
+  CREDENTIALS
   GOOGLE
 }
 
 enum UserStatus {
   ACTIVE
-  BLOCKED
-  BANNED
-  DELETED
+  BLOCKED // Temporary Blocked
+  BANNED // Permanently banned
+  DELETED // Soft deleted
 }
 
 enum PostStatus {
@@ -40,21 +40,24 @@ enum CommentStatus {
   DELETED
 }
 
-// USER MODEL
+// ============================================
+// USER & AUTHENTICATION
+// ============================================
 
 model User {
   id         String     @id @default(cuid())
   name       String
   email      String     @unique
-  password   String?
+  password   String? // NULL for OAuth users
   image      String?
   role       Role       @default(READER)
   status     UserStatus @default(ACTIVE)
-  isVerified Boolean    @default(false) // OTP 
-  isDeleted  Boolean    @default(false) // Soft Delete
+  isVerified Boolean    @default(false) // OTP verification
+  // Soft Delete
+  isDeleted  Boolean    @default(false)
   deletedAt  DateTime?
 
-  // RELATIONS
+  // Relations
   authAccounts  AuthProviderAccount[]
   otps          OtpVerification[]
   devices       LoginDevice[]
@@ -69,11 +72,19 @@ model User {
   @@index([role])
 }
 
+// ============================================
+// AUTH PROVIDER (OAuth Support)
+// ============================================
+
 model AuthProviderAccount {
   id           String       @id @default(cuid())
   userId       String
   provider     AuthProvider
-  providerId   String?
+  providerId   String? // Google User ID
+  // ⚙️ DECISION POINT:
+  // Uncomment these lines ONLY if you'll use Google APIs
+  // (Calendar, Gmail, Drive, etc.)
+  // 
   accessToken  String?      @db.Text
   refreshToken String?      @db.Text
   expiresAt    DateTime?
@@ -85,29 +96,38 @@ model AuthProviderAccount {
   @@index([userId])
 }
 
+// ============================================
+// OTP VERIFICATION (Email Verification)
+// ============================================
+
 model OtpVerification {
-  id        String   @id @default(cuid())
-  userId    String
-  email     String
-  otp       String
-  expiresAt DateTime
-  isUsed    Boolean  @default(false)
-  attempts  Int      @default(0)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now())
+  id          String    @id @default(cuid())
+  userId      String
+  email       String
+  otp         String // 6-digit code
+  expiresAt   DateTime // Valid for 5 minutes
+  isUsed      Boolean   @default(false)
+  attempts    Int       @default(0)
+  // Lock mechanism: 2-hour lock after 5 failed attempts
+  lockedUntil DateTime?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
 
   @@index([userId])
-  @@index([email])
   @@index([expiresAt])
 }
 
+// ============================================
+// DEVICE TRACKING (Smart Login)
+// ============================================
+
 model LoginDevice {
-  id            String
+  id            String         @id @default(cuid())
   userId        String
-  deviceId      String
+  deviceId      String // Browser fingerprint
   ipAddress     String
-  userAgent     String
-  isTrusted     Boolean        @default(false)
+  userAgent     String         @db.Text
+  isTrusted     Boolean        @default(false) // Trusted = No OTP needed
   lastLoginAt   DateTime       @default(now())
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   refreshTokens RefreshToken[]
@@ -119,13 +139,15 @@ model LoginDevice {
   @@index([deviceId])
 }
 
-// Refresh Token Model
+// ============================================
+// JWT REFRESH TOKEN (Revocation Support)
+// ============================================
 
 model RefreshToken {
   id        String       @id @default(cuid())
   userId    String
-  deviceId  String?
-  token     String       @unique @db.Text // 
+  deviceId  String? // Device reference
+  token     String       @unique @db.Text // JWT refresh token (hashed)
   expiresAt DateTime
   isRevoked Boolean      @default(false)
   user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -137,7 +159,9 @@ model RefreshToken {
   @@index([deviceId])
 }
 
-// BLOG MODEL
+// ============================================
+// BLOG CONTENT
+// ============================================
 
 model Post {
   id            String     @id @default(cuid())
@@ -152,13 +176,12 @@ model Post {
   metaTitle       String?  @db.VarChar(60)
   metaDescription String?  @db.VarChar(160)
   keywords        String[]
-
-  aiGeneratedExcerpt     String?  @db.VarChar(300)
-  aiGeneratedMetaTags    String?  @db.Text
-  aiSuggestedCategoryIds String[]
+  // AI Metadata (Single JSON field - cleaner than 3 separate fields)
+  // Structure: { generatedExcerpt, suggestedTags, suggestedCategory, generatedAt }
+  aiMetadata      Json?
 
   // Reading Info
-  readingTime Int    @default(5)
+  readingTime Int    @default(5) // Minutes
   difficulty  String @default("Intermediate")
   viewCount   Int    @default(0)
 
@@ -170,51 +193,64 @@ model Post {
   tags            Tag[]
   comments        Comment[]
   readingSessions ReadingSession[]
-  // Admin Moderation
 
+  // Admin Moderation
   approvedAt      DateTime?
-  approvedBy      String?
+  approvedBy      String? // Admin user ID
   rejectedAt      DateTime?
-  rejectedBy      String?
+  rejectedBy      String? // Admin user ID
   rejectionReason String?   @db.Text
   // Soft Delete
   isDeleted       Boolean   @default(false)
   deletedAt       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([authorId])
   @@index([categoryId])
   @@index([status])
-  @@index([slug])
   @@index([createdAt])
   @@index([viewCount])
-  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin)
 }
 
+// ============================================
+// CATEGORY (Minimalist - Essential Fields Only)
+// ============================================
+
 model Category {
-  id          String
-  name        String
-  slug        String
-  description String?
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
+  description String? @db.VarChar(160) // For SEO
   icon        String?
   color       String?
   posts       Post[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@index([slug])
 }
 
+// ============================================
+// TAG (Separate Table for Flexibility)
+// ============================================
+
 model Tag {
-  id        String
-  name      String
-  slug      String
-  posts     Post[]
+  id    String @id @default(cuid())
+  name  String @unique // "nextjs"
+  slug  String @unique // "nextjs"
+  posts Post[]
+
   createdAt DateTime @default(now())
 
   @@index([slug])
 }
+
+// ============================================
+// COMMENTS (Nested Replies Support)
+// ============================================
 
 model Comment {
   id      String        @id @default(cuid())
@@ -226,7 +262,7 @@ model Comment {
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-  // Nested Replies
+  // Nested Replies (Self-referential)
   parentId String?
   parent   Comment?  @relation("Replies", fields: [parentId], references: [id], onDelete: Cascade)
   replies  Comment[] @relation("Replies")
@@ -244,7 +280,9 @@ model Comment {
   @@index([status])
 }
 
-// ANALYTICS
+// ============================================
+// READING ANALYTICS
+// ============================================
 
 model ReadingSession {
   id           String    @id @default(cuid())

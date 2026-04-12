@@ -4,8 +4,19 @@ import { router } from "./app/routes/index.js";
 import { globalErrorHandler } from "./app/middlewares/globalErrorHandler.js";
 import notFound from "./app/middlewares/notFound.js";
 import cookieParser from "cookie-parser";
+import passport from "passport";
+import expressSession from "express-session";
 
 const app: Application = express();
+app.use(
+  expressSession({
+    secret: "secret",
+    resave: false,
+    saveUninitialized: false,
+  }),
+);
+app.use(passport.initialize());
+app.use(passport.session());
 app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
@@ -18,7 +29,7 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 app.get("/health", (req: Request, res: Response) => {
-  res.send("I can do this all day💪 My Blog website");
+  res.json("I can do this all day💪 My Blog website");
 });
 
 app.use(globalErrorHandler);
