@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import passport from "passport";
 import {
   Strategy as GoogleStrategy,
@@ -35,12 +36,17 @@ passport.use(
           // Blocked login access if user is Banned or Deleted
           if (existingUser.status === UserStatus.BANNED) {
             return done(null, false, { message: "Your account is banned." });
-          } else if (existingUser.status === UserStatus.DELETED) {
+          } else if (
+            existingUser.status === UserStatus.DELETED ||
+            existingUser.isDeleted
+          ) {
             return done(null, false, { message: "Your account is deleted." });
           }
 
           const hasGoogleLinked = existingUser.authAccounts.some(
-            (acc) => acc.provider === AuthProvider.GOOGLE,
+            (acc) =>
+              acc.provider === AuthProvider.GOOGLE &&
+              acc.providerId === profile.id,
           );
 
           if (!hasGoogleLinked) {
@@ -48,8 +54,8 @@ passport.use(
             await prisma.authProviderAccount.create({
               data: {
                 userId: existingUser.id,
-                provider: AuthProvider.GOOGLE,
-                providerId: profile.id,
+                provider: AuthProvider.GOOGLE, //=> Google
+                providerId: profile.id, // id = 123 exact same Google account কিনা check করা
               },
             });
           }
@@ -61,28 +67,21 @@ passport.use(
             data: {
               name: profile.displayName,
               image: profile?.photos?.[0].value,
+              isVerified: true,
             },
           });
 
-   return done(null,updatedUser);
-
-   
-
+          return done(null, updatedUser);
         }
 
-        // 1. Check user and create if not exists
-        const user = await prisma.user.upsert({
-          where: { email: email },
-          update: {
-            name: profile?.displayName,
-            image: profile?.photos?.[0].value,
-          },
-          create: {
+        // 3. If user does not exist create a new user account
+        const newUser = await prisma.user.create({
+          data: {
             name: profile.displayName,
             email: email,
             image: profile?.photos?.[0].value,
-            role: Role.READER, // Default role
-            isVerified: true, // Google user auto verified
+            role: Role.READER,
+            isVerified: true,
             authAccounts: {
               create: {
                 provider: AuthProvider.GOOGLE,
@@ -91,9 +90,9 @@ passport.use(
             },
           },
         });
-        return done(null, user);
+        return done(null, newUser);
       } catch (error) {
-        console.log("Google GoogleStrategy error", error);
+        console.error("GoogleStrategy error:", error);
         return done(error);
       }
     },
@@ -105,3 +104,33 @@ passport.use(
 // Bridge == Google -> user db store -> token
 //Custom -> email , password, role : USER, name... -> registration -> DB -> 1 User create
 //Google -> req -> google -> successful : Jwt Token : Role , email -> DB - Store -> token - api access
+
+passport.serializeUser((user: any, done: (err: any, id?: any) => void) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(
+  async (id: string, done: (err: any, user?: any) => void) => {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: id },
+        select: { id: true, email: true, role: true },
+      });
+      done(null, user);
+    } catch (error) {
+      done(error);
+    }
+  },
+);
+
+// /google → Google login page
+//         ↓
+// User login
+//         ↓
+// /google/callback
+//         ↓
+// GoogleStrategy (your code runs) when passport.ts codes runs
+//         ↓
+// done(null, user)
+//         ↓
+// AuthControllers.googleCallback

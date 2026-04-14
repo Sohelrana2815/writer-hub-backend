@@ -6,11 +6,12 @@ import notFound from "./app/middlewares/notFound.js";
 import cookieParser from "cookie-parser";
 import passport from "passport";
 import expressSession from "express-session";
+import "./app/config/passport.js";
 
 const app: Application = express();
 app.use(
   expressSession({
-    secret: "secret",
+    secret: process.env.EXPRESS_SESSION_SECRET as string,
     resave: false,
     saveUninitialized: false,
   }),
@@ -37,3 +38,14 @@ app.use(globalErrorHandler);
 app.use(notFound);
 
 export default app;
+
+
+// app.ts start
+//    ↓
+// import passport config file
+//    ↓
+// passport.use() runs
+//    ↓
+// routes use passport.authenticate()
+//    ↓
+// everything works ✅

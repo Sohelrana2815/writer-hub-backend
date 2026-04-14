@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Prisma } from "@prisma/client";
+import { Prisma, Role, UserStatus } from "@prisma/client";
 import prisma from "../../lib/prisma.js";
 import AppError from "../../errorsHelpers/AppError.js";
 import httpStatus from "http-status-codes";
@@ -9,6 +9,37 @@ import { generateToken, verifyToken } from "../../utils/jwt.js";
 import { JwtPayload } from "jsonwebtoken";
 
 type LoginPayload = Pick<Prisma.UserCreateInput, "email" | "password">;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const createAuthTokens = async (user: any) => {
+  const jwtPayload = {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+  };
+
+  const accessToken = generateToken(
+    jwtPayload,
+    envVars.JWT_ACCESS_SECRET,
+    envVars.JWT_ACCESS_EXPIRES_IN || "15m",
+  );
+
+  const refreshToken = generateToken(
+    jwtPayload,
+    envVars.JWT_REFRESH_SECRET,
+    envVars.JWT_REFRESH_EXPIRES_IN || "30d",
+  );
+  // Save the JWT RefreshToken in Database
+
+  await prisma.refreshToken.create({
+    data: {
+      userId: user.id,
+      token: refreshToken,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    },
+  });
+  return { accessToken, refreshToken };
+};
 
 const signup = async (payload: Prisma.UserCreateInput) => {
   const duplicateEmail = await prisma.user.findUnique({
@@ -40,11 +71,11 @@ const signup = async (payload: Prisma.UserCreateInput) => {
     data: {
       ...payload,
       password: hashedPassword,
+      role: Role.READER,
     },
   });
   // 3. Remove password from the returned object for security
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
   const { password, ...userWithoutPassword } = result;
   return userWithoutPassword;
 };
@@ -73,6 +104,10 @@ const login = async (payload: LoginPayload) => {
     );
   }
 
+  if (user.status === UserStatus.BANNED || user.isDeleted) {
+    throw new AppError(httpStatus.StatusCodes.FORBIDDEN, "Account is disabled");
+  }
+
   // 4. Verify the Password
 
   const isPasswordMatch = await bcrypt.compare(password, user.password);
@@ -85,38 +120,7 @@ const login = async (payload: LoginPayload) => {
     );
   }
 
-  // 6. Check User Status (Optional but Recommended)
-  // For example, is the account active, verified, or banned?
-  // if (user.sta !== "ACTIVE") {
-  //   throw new AppError(
-  //     httpStatus.FORBIDDEN,
-  //     "Your account is inactive",
-  //   );
-  // }
-
-  // 7. Generate JWT Tokens
-
-  const jwtPayload = {
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-  };
-
-  // Generate Access Token (Short-lived)
-
-  const accessToken = generateToken(
-    jwtPayload,
-    envVars.JWT_ACCESS_SECRET,
-    envVars.JWT_ACCESS_EXPIRES_IN || "15m",
-  );
-
-  // Generate Refresh Token (Long-lived)
-
-  const refreshToken = generateToken(
-    jwtPayload,
-    envVars.JWT_REFRESH_SECRET,
-    envVars.JWT_REFRESH_EXPIRES_IN || "30d",
-  );
+  const { accessToken, refreshToken } = await createAuthTokens(user);
 
   const { password: _, ...userWithoutPassword } = user;
 
@@ -127,13 +131,39 @@ const login = async (payload: LoginPayload) => {
   };
 };
 
-export const refreshToken = async (token: string) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const googleLogin = async (user: any) => {
+  if (!user) {
+    throw new AppError(
+      httpStatus.StatusCodes.UNAUTHORIZED,
+      "Google login failed",
+    );
+  }
+
+  const { accessToken, refreshToken } = await createAuthTokens(user);
+  return { accessToken, refreshToken, user };
+};
+
+export const refreshTokenService = async (token: string) => {
   const decoded = verifyToken<JwtPayload>(token, envVars.JWT_REFRESH_SECRET);
+
   if (!decoded)
     throw new AppError(
       httpStatus.StatusCodes.UNAUTHORIZED,
       "Invalid Refresh Token",
     );
+
+  const storedToken = await prisma.refreshToken.findUnique({
+    where: { token: token },
+  });
+
+  if (
+    !storedToken ||
+    storedToken.isRevoked ||
+    storedToken.expiresAt < new Date()
+  ) {
+    throw new AppError(httpStatus.StatusCodes.UNAUTHORIZED, "Session expired");
+  }
 
   const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
   if (!user)
@@ -150,5 +180,6 @@ export const refreshToken = async (token: string) => {
 export const AuthServices = {
   signup,
   login,
-  refreshToken,
+  googleLogin,
+  refreshToken: refreshTokenService,
 };
