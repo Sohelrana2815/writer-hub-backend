@@ -8,6 +8,42 @@ import {
 import { envVars } from "./env.js";
 import prisma from "../lib/prisma.js";
 import { AuthProvider, Role, UserStatus } from "@prisma/client";
+import { Strategy as LocalStrategy } from "passport-local";
+import bcrypt from "bcrypt";
+// Login method For Local Strategy
+passport.use(
+  new LocalStrategy(
+    {
+      usernameField: "email",
+      passwordField: "password",
+    },
+    async (email: string, password: string, done: VerifyCallback) => {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { email: email },
+        });
+
+        if (!user) {
+          return done(null, false, { message: "User does not exist" });
+        }
+
+        const isPasswordMatch = await bcrypt.compare(
+          password as string,
+          user.password as string,
+        );
+
+        if (!isPasswordMatch) {
+          return done(null, false, { message: "Password does not match" });
+        }
+
+        return done(null, user);
+      } catch (error) {
+        console.log(error);
+        return done(error);
+      }
+    },
+  ),
+);
 
 passport.use(
   new GoogleStrategy(
