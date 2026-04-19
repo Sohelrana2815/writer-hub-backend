@@ -23,7 +23,6 @@ enum UserStatus {
   ACTIVE
   BLOCKED // Temporary Blocked
   BANNED // Permanently banned
-  DELETED // Soft deleted
 }
 
 enum PostStatus {
@@ -38,6 +37,11 @@ enum CommentStatus {
   ACTIVE
   HIDDEN
   DELETED
+}
+
+enum OtpType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
 }
 
 // ============================================
@@ -60,7 +64,6 @@ model User {
   // Relations
   authAccounts  AuthProviderAccount[]
   otps          OtpVerification[]
-  devices       LoginDevice[]
   posts         Post[]
   comments      Comment[]
   sessions      ReadingSession[]
@@ -104,39 +107,19 @@ model OtpVerification {
   id          String    @id @default(cuid())
   userId      String
   email       String
-  otp         String // 6-digit code
-  expiresAt   DateTime // Valid for 5 minutes
+  otp         String
+  type        OtpType // PURPOSE: distinguish verification vs password reset
+  expiresAt   DateTime
   isUsed      Boolean   @default(false)
   attempts    Int       @default(0)
-  // Lock mechanism: 2-hour lock after 5 failed attempts
   lockedUntil DateTime?
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([expiresAt])
-}
-
-// ============================================
-// DEVICE TRACKING (Smart Login)
-// ============================================
-
-model LoginDevice {
-  id            String         @id @default(cuid())
-  userId        String
-  deviceId      String // Browser fingerprint
-  ipAddress     String?
-  userAgent     String?        @db.Text
-  isTrusted     Boolean        @default(false) // Trusted = No OTP needed
-  lastLoginAt   DateTime       @default(now())
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  refreshTokens RefreshToken[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-
-  @@unique([userId, deviceId])
-  @@index([userId])
-  @@index([deviceId])
 }
 
 // ============================================
@@ -144,19 +127,16 @@ model LoginDevice {
 // ============================================
 
 model RefreshToken {
-  id        String       @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
-  deviceId  String? // Device reference
-  token     String       @unique @db.Text // JWT refresh token (hashed)
+  token     String   @unique @db.Text // JWT refresh token (hashed)
   expiresAt DateTime
-  isRevoked Boolean      @default(false)
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  device    LoginDevice? @relation(fields: [deviceId], references: [id])
-  createdAt DateTime     @default(now())
+  isRevoked Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([token])
-  @@index([deviceId])
 }
 
 // ============================================
@@ -172,20 +152,15 @@ model Post {
   featuredImage String?
   status        PostStatus @default(PENDING)
 
-  // SEO Metadata
   metaTitle       String?  @db.VarChar(60)
   metaDescription String?  @db.VarChar(160)
   keywords        String[]
-  // AI Metadata (Single JSON field - cleaner than 3 separate fields)
-  // Structure: { generatedExcerpt, suggestedTags, suggestedCategory, generatedAt }
   aiMetadata      Json?
 
-  // Reading Info
-  readingTime Int    @default(5) // Minutes
+  readingTime Int    @default(5)
   difficulty  String @default("Intermediate")
   viewCount   Int    @default(0)
 
-  // Relations
   authorId        String
   author          User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
   categoryId      String
@@ -194,13 +169,11 @@ model Post {
   comments        Comment[]
   readingSessions ReadingSession[]
 
-  // Admin Moderation
   approvedAt      DateTime?
-  approvedBy      String? // Admin user ID
+  approvedBy      String?
   rejectedAt      DateTime?
-  rejectedBy      String? // Admin user ID
+  rejectedBy      String?
   rejectionReason String?   @db.Text
-  // Soft Delete
   isDeleted       Boolean   @default(false)
   deletedAt       DateTime?
 
@@ -222,7 +195,7 @@ model Category {
   id          String  @id @default(cuid())
   name        String  @unique
   slug        String  @unique
-  description String? @db.VarChar(160) // For SEO
+  description String? @db.VarChar(160)
   icon        String?
   color       String?
   posts       Post[]
@@ -239,8 +212,8 @@ model Category {
 
 model Tag {
   id    String @id @default(cuid())
-  name  String @unique // "nextjs"
-  slug  String @unique // "nextjs"
+  name  String @unique
+  slug  String @unique
   posts Post[]
 
   createdAt DateTime @default(now())
@@ -262,12 +235,10 @@ model Comment {
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
-  // Nested Replies (Self-referential)
   parentId String?
   parent   Comment?  @relation("Replies", fields: [parentId], references: [id], onDelete: Cascade)
   replies  Comment[] @relation("Replies")
 
-  // Soft Delete
   isDeleted Boolean   @default(false)
   deletedAt DateTime?
 
@@ -288,14 +259,15 @@ model ReadingSession {
   id           String    @id @default(cuid())
   userId       String
   postId       String
-  duration     Int       @default(0) // Seconds
-  progress     Int       @default(0) // 0-100%
+  duration     Int       @default(0)
+  progress     Int       @default(0)
   startedAt    DateTime  @default(now())
-  lastActiveAt DateTime  @default(now()) // Last Read at 
+  lastActiveAt DateTime  @default(now())
   completedAt  DateTime?
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
   updatedAt DateTime @updatedAt
 
   @@unique([userId, postId])
