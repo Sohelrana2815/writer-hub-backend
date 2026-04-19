@@ -25,7 +25,7 @@ const signupZodSchema = z.object({
     image: z.url({ error: "Invalid image URL" }).optional(),
 
     // z.enum now natively handles Prisma objects/enums
-    role: z.enum(Role).optional().default(Role.ADMIN),
+    role: z.enum(Role).optional().default(Role.READER),
   }),
 });
 /**

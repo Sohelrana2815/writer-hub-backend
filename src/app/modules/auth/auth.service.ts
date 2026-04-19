@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Prisma, Role, UserStatus } from "@prisma/client";
 import prisma from "../../lib/prisma.js";
@@ -80,58 +81,60 @@ const signup = async (payload: Prisma.UserCreateInput) => {
   return userWithoutPassword;
 };
 
-const login = async (payload: LoginPayload) => {
-  const { email, password } = payload;
+// const login = async (payload: LoginPayload) => {
 
-  // 1. Input Validation
-  // Use findUnique for efficient lookup
-  if (!email || !password) {
-    throw new AppError(
-      httpStatus.StatusCodes.BAD_REQUEST,
-      "Email and password are required",
-    );
-  }
-  // 2. Find the User by Email
-  const user = await prisma.user.findUnique({
-    where: { email },
-  });
-  // 3. Handle Non-Existent User
+//   const { email, password } = payload;
 
-  if (!user || !user.password) {
-    throw new AppError(
-      httpStatus.StatusCodes.UNAUTHORIZED,
-      "Invalid credentials",
-    );
-  }
+//   // 1. Input Validation
+//   // Use findUnique for efficient lookup
+//   if (!email || !password) {
+//     throw new AppError(
+//       httpStatus.StatusCodes.BAD_REQUEST,
+//       "Email and password are required",
+//     );
+//   }
+//   // 2. Find the User by Email
+//   const user = await prisma.user.findUnique({
+//     where: { email },
+//   });
+//   // 3. Handle Non-Existent User
 
-  if (user.status === UserStatus.BANNED || user.isDeleted) {
-    throw new AppError(httpStatus.StatusCodes.FORBIDDEN, "Account is disabled");
-  }
+//   if (!user || !user.password) {
+//     throw new AppError(
+//       httpStatus.StatusCodes.UNAUTHORIZED,
+//       "Invalid credentials",
+//     );
+//   }
 
-  // 4. Verify the Password
+//   if (user.status === UserStatus.BANNED || user.isDeleted) {
+//     throw new AppError(httpStatus.StatusCodes.FORBIDDEN, "Account is disabled");
+//   }
 
-  const isPasswordMatch = await bcrypt.compare(password, user.password);
+//   // 4. Verify the Password
 
-  // 5. Handle Incorrect Password
-  if (!isPasswordMatch) {
-    throw new AppError(
-      httpStatus.StatusCodes.UNAUTHORIZED,
-      "Email or password is incorrect",
-    );
-  }
+//   const isPasswordMatch = await bcrypt.compare(password, user.password);
 
-  const { accessToken, refreshToken } = await createAuthTokens(user);
+//   // 5. Handle Incorrect Password
+//   if (!isPasswordMatch) {
+//     throw new AppError(
+//       httpStatus.StatusCodes.UNAUTHORIZED,
+//       "Email or password is incorrect",
+//     );
+//   }
 
-  const { password: _, ...userWithoutPassword } = user;
+//   const { accessToken, refreshToken } = await createAuthTokens(user);
 
-  return {
-    accessToken,
-    refreshToken,
-    user: userWithoutPassword,
-  };
-};
+//   const { password: _, ...userWithoutPassword } = user;
+
+//   return {
+//     accessToken,
+//     refreshToken,
+//     user: userWithoutPassword,
+//   };
+// };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const googleLogin = async (user: any) => {
   if (!user) {
     throw new AppError(
@@ -179,7 +182,8 @@ export const refreshTokenService = async (token: string) => {
 
 export const AuthServices = {
   signup,
-  login,
+  // login,
   googleLogin,
   refreshToken: refreshTokenService,
+  createAuthTokens,
 };

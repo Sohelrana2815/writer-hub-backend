@@ -17,15 +17,44 @@ passport.use(
       usernameField: "email",
       passwordField: "password",
     },
-    async (email: string, password: string, done: VerifyCallback) => {
+    async (email: string, password: string, done) => {
       try {
         const user = await prisma.user.findUnique({
           where: { email: email },
+          include: { authAccounts: true },
         });
+
+        if (user?.status === UserStatus.BANNED) {
+          return done(null, false, { message: "Your account is banned." });
+        }
+
+        if (user?.isDeleted || user?.status === UserStatus.DELETED) {
+          return done(null, false, { message: "Your account is deleted." });
+        }
 
         if (!user) {
           return done(null, false, { message: "User does not exist" });
         }
+
+        // if (!user) {
+        //   return done("User doest not exist");
+        // }
+
+        const isGoogleAuthenticated = user.authAccounts.some(
+          (account) => account.provider === AuthProvider.GOOGLE,
+        );
+
+        if (isGoogleAuthenticated && !user.password) {
+          return done(null, false, {
+            message: "Please login with Google or set a password first.",
+          });
+        }
+
+        // if (isGoogleAuthenticated) {
+        //   return done(
+        //     "You have authenticated through Google. So if you want to login with credentials, then at first login with google and set a password for your Gmail and then you can login with email and password.",
+        //   );
+        // }
 
         const isPasswordMatch = await bcrypt.compare(
           password as string,
@@ -37,6 +66,7 @@ passport.use(
         }
 
         return done(null, user);
+        
       } catch (error) {
         console.log(error);
         return done(error);
@@ -141,23 +171,23 @@ passport.use(
 //Custom -> email , password, role : USER, name... -> registration -> DB -> 1 User create
 //Google -> req -> google -> successful : Jwt Token : Role , email -> DB - Store -> token - api access
 
-passport.serializeUser((user: any, done: (err: any, id?: any) => void) => {
-  done(null, user.id);
-});
+// passport.serializeUser((user: any, done: (err: any, id?: any) => void) => {
+//   done(null, user.id);
+// });
 
-passport.deserializeUser(
-  async (id: string, done: (err: any, user?: any) => void) => {
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: id },
-        select: { id: true, email: true, role: true },
-      });
-      done(null, user);
-    } catch (error) {
-      done(error);
-    }
-  },
-);
+// passport.deserializeUser(
+//   async (id: string, done: (err: any, user?: any) => void) => {
+//     try {
+//       const user = await prisma.user.findUnique({
+//         where: { id: id },
+//         select: { id: true, email: true, role: true },
+//       });
+//       done(null, user);
+//     } catch (error) {
+//       done(error);
+//     }
+//   },
+// );
 
 // /google → Google login page
 //         ↓

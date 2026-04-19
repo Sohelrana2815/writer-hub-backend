@@ -1,0 +1,28 @@
+
+model User {
+  id         String     @id @default(cuid())
+  name       String
+  email      String     @unique
+  password   String? // NULL for OAuth users
+  image      String?
+  role       Role       @default(READER)
+  status     UserStatus @default(ACTIVE)
+  isVerified Boolean    @default(false) // OTP verification
+  // Soft Delete
+  isDeleted  Boolean    @default(false)
+  deletedAt  DateTime?
+
+  // Relations
+  authAccounts  AuthProviderAccount[]
+  otps          OtpVerification[]
+  devices       LoginDevice[]
+  posts         Post[]
+  comments      Comment[]
+  sessions      ReadingSession[]
+  refreshTokens RefreshToken[]
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([status])
+  @@index([role])
+}

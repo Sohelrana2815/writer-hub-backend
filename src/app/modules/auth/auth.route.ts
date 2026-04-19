@@ -3,11 +3,13 @@ import validateRequest from "../../middlewares/validateRequest.js";
 import { AuthControllers } from "./auth.controller.js";
 import { AuthValidation } from "./auth.validation.js";
 import passport from "passport";
+import { multerUpload } from "../../config/multer.config.js";
 
 const router = Router();
 
 router.post(
   "/signup",
+  multerUpload.single("file"), 
   validateRequest(AuthValidation.signupZodSchema),
   AuthControllers.signup,
 );
@@ -15,7 +17,7 @@ router.post(
 router.post(
   "/login",
   validateRequest(AuthValidation.loginZodSchema),
-  AuthControllers.login,
+  AuthControllers.credentialsLogin,
 );
 
 router.get(
@@ -33,7 +35,10 @@ router.get(
 
 router.get(
   "/google/callback",
-  passport.authenticate("google", { failureRedirect: "/login" }),
+  passport.authenticate("google", {
+    failureRedirect: "/login",
+    session: false,
+  }),
   AuthControllers.googleCallback,
 );
 

@@ -125,8 +125,8 @@ model LoginDevice {
   id            String         @id @default(cuid())
   userId        String
   deviceId      String // Browser fingerprint
-  ipAddress     String
-  userAgent     String         @db.Text
+  ipAddress     String?
+  userAgent     String?        @db.Text
   isTrusted     Boolean        @default(false) // Trusted = No OTP needed
   lastLoginAt   DateTime       @default(now())
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
