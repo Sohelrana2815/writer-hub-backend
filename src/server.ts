@@ -5,6 +5,7 @@ import prisma from "./app/lib/prisma.js";
 import { Server } from "http";
 import { envVars } from "./app/config/env.js";
 import { seedAdmin } from "./app/utils/seedAdmin.js";
+import { connectRedis } from "./app/config/redis.config.js";
 
 let server: Server;
 
@@ -26,7 +27,15 @@ const startServer = async () => {
   }
 };
 
-startServer();
+(async () => {
+  try {
+    await connectRedis();
+    await startServer();
+  } catch (error) {
+    console.error("❌ Startup failed:", error);
+    process.exit(1);
+  }
+})();
 
 process.on("uncaughtException", (err) => {
   console.log("Uncaught Exception error, Shutting down the server...", err);

@@ -5,13 +5,16 @@ CREATE TYPE "Role" AS ENUM ('ADMIN', 'AUTHOR', 'READER');
 CREATE TYPE "AuthProvider" AS ENUM ('CREDENTIALS', 'GOOGLE');
 
 -- CreateEnum
-CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'BLOCKED', 'BANNED', 'DELETED');
+CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'BLOCKED', 'BANNED');
 
 -- CreateEnum
 CREATE TYPE "PostStatus" AS ENUM ('DRAFT', 'PENDING', 'PUBLISHED', 'ARCHIVED', 'REJECTED');
 
 -- CreateEnum
 CREATE TYPE "CommentStatus" AS ENUM ('ACTIVE', 'HIDDEN', 'DELETED');
+
+-- CreateEnum
+CREATE TYPE "OtpType" AS ENUM ('EMAIL_VERIFICATION', 'PASSWORD_RESET');
 
 -- CreateTable
 CREATE TABLE "User" (
@@ -52,6 +55,7 @@ CREATE TABLE "OtpVerification" (
     "userId" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "otp" TEXT NOT NULL,
+    "type" "OtpType" NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "isUsed" BOOLEAN NOT NULL DEFAULT false,
     "attempts" INTEGER NOT NULL DEFAULT 0,
@@ -62,25 +66,9 @@ CREATE TABLE "OtpVerification" (
 );
 
 -- CreateTable
-CREATE TABLE "LoginDevice" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "deviceId" TEXT NOT NULL,
-    "ipAddress" TEXT NOT NULL,
-    "userAgent" TEXT NOT NULL,
-    "isTrusted" BOOLEAN NOT NULL DEFAULT false,
-    "lastLoginAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "LoginDevice_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "RefreshToken" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "deviceId" TEXT,
     "token" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
     "isRevoked" BOOLEAN NOT NULL DEFAULT false,
@@ -205,15 +193,6 @@ CREATE INDEX "OtpVerification_userId_idx" ON "OtpVerification"("userId");
 CREATE INDEX "OtpVerification_expiresAt_idx" ON "OtpVerification"("expiresAt");
 
 -- CreateIndex
-CREATE INDEX "LoginDevice_userId_idx" ON "LoginDevice"("userId");
-
--- CreateIndex
-CREATE INDEX "LoginDevice_deviceId_idx" ON "LoginDevice"("deviceId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "LoginDevice_userId_deviceId_key" ON "LoginDevice"("userId", "deviceId");
-
--- CreateIndex
 CREATE UNIQUE INDEX "RefreshToken_token_key" ON "RefreshToken"("token");
 
 -- CreateIndex
@@ -221,9 +200,6 @@ CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
 
 -- CreateIndex
 CREATE INDEX "RefreshToken_token_idx" ON "RefreshToken"("token");
-
--- CreateIndex
-CREATE INDEX "RefreshToken_deviceId_idx" ON "RefreshToken"("deviceId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Post_slug_key" ON "Post"("slug");
@@ -292,13 +268,7 @@ ALTER TABLE "AuthProviderAccount" ADD CONSTRAINT "AuthProviderAccount_userId_fke
 ALTER TABLE "OtpVerification" ADD CONSTRAINT "OtpVerification_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "LoginDevice" ADD CONSTRAINT "LoginDevice_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "LoginDevice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Post" ADD CONSTRAINT "Post_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
