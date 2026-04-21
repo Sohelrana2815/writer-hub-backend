@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable no-unused-vars */
 import { NextFunction, Request, Response } from "express";
 import { UserServices } from "./user.service.js";
 import httpStatus from "http-status-codes";

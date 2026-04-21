@@ -11,10 +11,10 @@ import { User } from "@prisma/client";
 
 const signup = catchAsync(async (req: Request, res: Response) => {
   // console.log("from auth controller", req.body);
-  console.log("From signup controller: ", {
-    file: req.file,
-    body: req.body,
-  });
+  // console.log("From signup controller: ", {
+  //   file: req.file,
+  //   body: req.body,
+  // });
   const payload: User = {
     ...req.body,
     image: req.file?.path,

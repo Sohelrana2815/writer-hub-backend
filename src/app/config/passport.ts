@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import passport from "passport";
 import {
   Strategy as GoogleStrategy,
@@ -28,7 +27,7 @@ passport.use(
           return done(null, false, { message: "Your account is banned." });
         }
 
-        if (user?.isDeleted || user?.status === UserStatus.DELETED) {
+        if (user?.isDeleted) {
           return done(null, false, { message: "Your account is deleted." });
         }
 
@@ -66,7 +65,6 @@ passport.use(
         }
 
         return done(null, user);
-        
       } catch (error) {
         console.log(error);
         return done(error);
@@ -102,10 +100,7 @@ passport.use(
           // Blocked login access if user is Banned or Deleted
           if (existingUser.status === UserStatus.BANNED) {
             return done(null, false, { message: "Your account is banned." });
-          } else if (
-            existingUser.status === UserStatus.DELETED ||
-            existingUser.isDeleted
-          ) {
+          } else if (existingUser.isDeleted) {
             return done(null, false, { message: "Your account is deleted." });
           }
 
