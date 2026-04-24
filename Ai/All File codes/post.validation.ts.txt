@@ -26,15 +26,9 @@ const postBodySchema = z.object({
     .enum(Object.values(PostStatus) as [string, ...string[]])
     .default(PostStatus.DRAFT),
 
-  // categoryId: z.string({
-  //   error: "Please select a category",
-  // }),
-
-  category: z
-    .string({ error: "Category is required" })
-    .min(2, "Category name is too short")
-    .max(50, "Category name is too long")
-    .trim(),
+  categoryId: z.string({
+    error: "Please select a category",
+  }),
 
   readingTime: z
     .number({ error: "Reading time must be a number" })

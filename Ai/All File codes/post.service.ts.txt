@@ -1,29 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import slugify from "slugify";
 import prisma from "../../lib/prisma.js";
 
 const createPost = async (authorId: string, payload: any) => {
-  const { category, ...postData } = payload;
-  // 1. Normalize: "Javascript " => "javascript"
-  const normalizedName = category.trim().toLowerCase();
-  // 2. Find or create the category — no duplicates, no conflicts
-  const categorySlug = slugify(normalizedName, { lower: true, strict: true });
+  const { categoryId, ...postData } = payload;
 
-  const categoryRecord = await prisma.category.upsert({
-    where: { slug: categorySlug },
-    create: { name: normalizedName, slug: categorySlug },
-    update: {}, // already exists, do nothing
-  });
-  // 3. Create the post and connect the resolved category
-  await prisma.post.create({
+  return await prisma.post.create({
     data: {
       ...postData,
-      author: { connect: { id: authorId } },
-      category: { connect: { id: categoryRecord.id } },
-    },
-    include: {
-      category: { select: { name: true, slug: true } },
-      author: { select: { name: true, image: true } },
+      // Link the Author (extracted from JWT)
+      author: {
+        connect: { id: authorId },
+      },
+      // Link the Category (selected by Admin in the request)
+      category: {
+        connect: { id: categoryId },
+      },
     },
   });
 };

@@ -8,9 +8,9 @@ import { Role } from "@prisma/client";
 const router = Router();
 router.post(
   "/",
-  auth(Role.ADMIN, Role.AUTHOR),
   validateRequest(PostValidation.createPostZodSchema),
-  PostControllers.createPost,
+  auth(Role.ADMIN, Role.AUTHOR),
+  // PostControllers.createPost,
 );
 
 router.get("/", PostControllers.getAllPosts);

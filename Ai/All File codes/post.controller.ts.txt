@@ -23,20 +23,6 @@ import httpStatus from "http-status-codes";
 //   },
 // );
 
-const createPost = catchAsync(
-  async (req: Request, res: Response, next: NextFunction) => {
-    const authorId = req.user?.userId as string;
-    const result = await PostServices.createPost(authorId, req.body);
-
-    sendResponse(res, {
-      statusCode: httpStatus.StatusCodes.CREATED,
-      success: true,
-      message: "Post Created Successfully",
-      data: result,
-    });
-  },
-);
-
 const getAllPosts = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const result = await PostServices.getAllPosts();
@@ -63,8 +49,11 @@ const getPostBySlug = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+
+
+
 export const PostControllers = {
-  createPost,
+  // createPost,
   getAllPosts,
   getPostBySlug,
 };
